@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Replace .profile with .bashrc if required
+[ -f /etc/profile.local ] && source /etc/profile.local
+if [ -z "$VAGRANT_MACHINE" ]; then
+    echo "export VAGRANT_MACHINE=$1" >> /etc/profile.local
+fi
+if [ -z "$ANSIBLE_HOST_KEY_CHECKING" ]; then
+    echo "export ANSIBLE_HOST_KEY_CHECKING=False" >> /etc/profile.local
+fi
+source /etc/profile.local

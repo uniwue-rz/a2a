@@ -1,0 +1,10 @@
+[Phabricator]
+ApiURL = URL of the Phabricator API
+ApiToken = Token for Phabricator API
+
+[Ansible]
+Playbook = The Path to Ansible Playbook
+
+[Wrapper]
+Passphrase = "^\\((?P<name>[a-z-A-Z0-9.-]+)\\)$" # passphrase should always be in ()
+Json = "^(\\[.*\\]|\\{.*\\})" # This is how the applications finds the data is a json data

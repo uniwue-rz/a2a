@@ -1,0 +1,29 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+# Start the configuration
+Vagrant.configure("2") do |config|
+  N = 1
+  VAGRANT_VM_PROVIDER = "virtualbox"
+  config.vm.box = "your-dist"
+  config.vm.box_check_update = true
+  # Provision the Machines
+  (1..N).each do |machine_id|
+    config.vm.define "machine#{machine_id}" do |machine|
+      machine.vm.hostname = "machine#{machine_id}"
+      machine.vm.network "private_network", ip: "192.168.77.#{20+machine_id}"
+      machine.vm.provider "virtualbox" do |vb|
+        vb.memory = "2048"
+      end
+      machine.vm.provision :shell, :path => "script.sh" :args => [machine#{machine_id}]
+      machine.vm.provision :ansible_local do |ansible|
+          ansible.playbook = "playbook.yml"
+          ansible.verbose = true
+          ansible.limit = "machine#{machine_id}"
+          ansible.inventory_path = "/usr/local/bin/a2a-vagrant"
+          ansible.raw_arguments = [
+             "--private-key=/vagrant/.vagrant/machines/machine#{machine_id}/#{VAGRANT_VM_PROVIDER}/private_key"
+          ]
+      end
+    end
+  end
+end
