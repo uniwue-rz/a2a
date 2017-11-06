@@ -68,7 +68,7 @@ done in given Service, Service Bindings tab.
 and Device. These will be translated to Group and Host variables.
 
 A2A support both host variables and group variables. [Ansible variable precedence](http://docs.ansible.com/ansible/latest/playbooks_variables.html#variable-precedence-where-should-i-put-a-variable) takes host variables over group variables. The variables
-should follow a special syntax. You should take care in your playbook is that YAML files can not
+should follow a special syntax. You should take care in your playbook that YAML files can not
 have `-` (dashes) in variable name. Almanac does not support underscore `_`  in
 property keys. Therefore when you add a new property, the key is added as a dashed value.
 A2A automatically convert the dashes to underscore in the dynamic inventory result.
