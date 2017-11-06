@@ -11,7 +11,7 @@ You need a working Phabricator instance with API access to Almanac enabled.
 
 ## Download
 
-The binaries can be downloaded from github website. For every release there
+The binaries can be [downloaded](https://github.com/uniwue-rz/a2a/releases) from github website. For every release there
 will be binaries for popular architectures.
 
 ## Installation
