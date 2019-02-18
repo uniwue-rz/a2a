@@ -5,18 +5,17 @@ package main
 // It supports all the parameters and options detailed there.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"os/user"
-	"encoding/json"
-	"regexp"
-
+	"github.com/uniwue-rz/phabricator-go"
 	"github.com/urfave/cli"
 	"gopkg.in/gcfg.v1"
 	"gopkg.in/yaml.v2"
-	"github.com/uniwue-rz/phabricator-go"
+	"io/ioutil"
+	"os"
+	"os/user"
+	"regexp"
 )
 
 // AnsiblePlaybook will only be read in the Vagrant mode.
@@ -76,7 +75,8 @@ func (output *Output) AddHost(host string, groupName string) {
 
 // Augment adds the result from passphrase and sanitizes the json results, so everything looks polished.
 func (output *Output) Augment(request *phabricator.Request, PassphraseWrapper string, JsonWrapper string) {
-	for k,v := range output.Meta.HostVars{
+
+	for k, v := range output.Meta.HostVars {
 		for i, j := range v {
 			passphrase, isPassphrase, _ := HandlePassphrase(request, PassphraseWrapper, j.(string))
 			if isPassphrase {
@@ -87,8 +87,10 @@ func (output *Output) Augment(request *phabricator.Request, PassphraseWrapper st
 				v[i] = jsonData
 			}
 		}
+
 		output.Meta.HostVars[k] = v
 	}
+
 	for k, v := range output.Group {
 		for i, j := range v.Vars {
 			passphrase, isPassphrase, _ := HandlePassphrase(request, PassphraseWrapper, j.(string))
@@ -125,7 +127,7 @@ func HandlePassphrase(request *phabricator.Request, PassphraseWrapper string, pr
 		if len(passPhraseRegexMatching) > 1 {
 			isPassphrase = true
 			passPhraseKey := passPhraseRegexMatching[1]
-			passphraseObj, err := phabricator.GetPassPhrase(request, passPhraseKey)
+			passphraseObj, err := phabricator.GetPassPhrasewithId(request, passPhraseKey)
 			if err != nil {
 				passPhrase = ""
 			}
@@ -148,36 +150,40 @@ func HandlePassphrase(request *phabricator.Request, PassphraseWrapper string, pr
 
 //List Returns the json list of hosts and their properties
 func List(request *phabricator.Request, vagrant string, playBookPath string) (output Output, err error) {
+
 	groupList := make(map[string]Group)
-	services, err := phabricator.GetServices(request)
 	hostVars := make(map[string]map[string]interface{})
+	services, err := phabricator.GetServices(request)
+
 	// Returns the List of services
 	if err != nil {
 		panic(err)
 	}
-	for _, v := range services.Result.Data {
+	for _, d := range services.Result.Data {
 		var group Group
 		// Add the hosts from the binding
-		for _, v := range v.Attachments.Bindings.Bindings {
-			values, err := CreateHost(request, v.Interface.Device.Name)
+		for _, v := range d.Attachments.Bindings.Bindings {
+			interfaceDeviceName := v.Interface.Device.Name
+			values, err := CreateHost(request, interfaceDeviceName)
 			if err != nil {
 				panic(err)
 			}
-
 			hostVars[v.Interface.Device.Name] = values
 			group.Hosts = append(group.Hosts, v.Interface.Device.Name)
 		}
+
 		vars := make(map[string]interface{})
-		for _, v := range v.Attachments.Properties.Properties {
+		for _, v := range d.Attachments.Properties.Properties {
 			key := ReplaceToUnderscore(v.Key)
 			vars[key] = v.Value
 		}
 		group.Vars = vars
+
 		// This fixes the problem with the groups with empty hosts.
 		if len(group.Hosts) == 0 {
 			group.Hosts = []string{}
 		}
-		groupList[v.Fields.Name] = group
+		groupList[d.Fields.Name] = group
 	}
 	output.Meta.HostVars = hostVars
 	output.Group = groupList
@@ -194,7 +200,7 @@ func List(request *phabricator.Request, vagrant string, playBookPath string) (ou
 }
 
 // ReplaceToUnderscore simply replaces the dashes in the given text to underscore for the given keys.
-func ReplaceToUnderscore(key string) string{
+func ReplaceToUnderscore(key string) string {
 	re := regexp.MustCompile("-")
 
 	return re.ReplaceAllString(key, "_")
@@ -257,7 +263,7 @@ func ReadConfig() (Config Configuration, err error) {
 // CreateCommandLine creates a command line for the application
 func CreateCommandLine() *cli.App {
 	app := cli.NewApp()
-	app.Version = "0.0.1"
+	app.Version = "0.0.2"
 	app.Author = "Pouyan Azari"
 	app.EnableBashCompletion = true
 	app.Name = "A2A"
@@ -275,24 +281,27 @@ func CreateCommandLine() *cli.App {
 			Name:  "host, s",
 			Usage: "List the properties for the given host",
 		},
+		cli.StringFlag{
+			Name:  "prometheus, p",
+			Usage: "Returns the list of services supported by Prometheus for the given host",
+		},
 	}
 
 	return app
 }
 
 // AugmentHost augments the given host with th
-func AugmentHost(request * phabricator.Request, hostData map[string]interface{}, PassphraseWrapper string, JsonWrapper string) map[string]interface{}{
- for k,v := range hostData {
-	 passphrase, isPassphrase, _ := HandlePassphrase(request, PassphraseWrapper, v.(string))
-	 if isPassphrase {
-		 hostData[k] = passphrase
-	 }
-	 jsonData, isJson, _ := HandleJson(JsonWrapper, v.(string))
-	 if isJson {
-		 hostData[k] = jsonData
-	 }
+func AugmentHost(request *phabricator.Request, hostData map[string]interface{}, PassphraseWrapper string, JsonWrapper string) map[string]interface{} {
+	for k, v := range hostData {
+		passphrase, isPassphrase, _ := HandlePassphrase(request, PassphraseWrapper, v.(string))
+		if isPassphrase {
+			hostData[k] = passphrase
+		}
+		jsonData, isJson, _ := HandleJson(JsonWrapper, v.(string))
+		if isJson {
+			hostData[k] = jsonData
+		}
 	}
-
 	return hostData
 }
 
@@ -322,7 +331,7 @@ func main() {
 		}
 		// Manage the --host command
 		host := c.String("host")
-		if host != ""{
+		if host != "" {
 			hostData, _ := CreateHost(&request, host)
 			hostData = AugmentHost(&request, hostData, Config.Wrapper.Passphrase, Config.Wrapper.Json)
 			jsonData, _ := json.Marshal(hostData)
@@ -331,5 +340,5 @@ func main() {
 		}
 		return nil
 	}
-	app.Run(os.Args)
+	err = app.Run(os.Args)
 }
