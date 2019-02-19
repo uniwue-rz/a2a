@@ -224,11 +224,8 @@ go build
 
 There are several points that should be covered in the next couple of
 releases:
-- Data caching: lots of queries to Phabricator server can be cached
 - Parallel Queries: to make the queries to Phabricator faster parallel queries should be possible.
 it should use the concurrency feature of Go.
-- Code rewrites and audits for the complex parts: This can make
-the application also faster
 - Test case: Add test cases for the application
 - Native Packages: This has low priority, but will replace the binary
 releases at some point.

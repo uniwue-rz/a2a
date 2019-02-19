@@ -15,8 +15,13 @@ import (
 	"io/ioutil"
 	"os"
 	"os/user"
+	"path/filepath"
 	"regexp"
+	"time"
 )
+
+const cacheFile = "a2a_cache"
+const prometheusCache = "a2a_cache_prometheus"
 
 // AnsiblePlaybook will only be read in the Vagrant mode.
 type AnsiblePlaybook struct {
@@ -70,6 +75,56 @@ func (output *Output) AddHost(host string, groupName string) {
 			v.Hosts = append(v.Hosts, host)
 			output.Group[k] = v
 		}
+	}
+}
+
+// Save the result json data in the cache.
+// If the cache is not to old this will be returned as the result
+func saveCache(jsonData []byte, path string) {
+	cacheFileObject, err := getTempFilePath(path)
+	if err != nil {
+		panic(err)
+	}
+	thePath, err := filepath.Abs(cacheFileObject.Name())
+	err = ioutil.WriteFile(thePath, jsonData, 0644)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// Reads the cache file and see if is still valid
+// If still valid it will be used.
+// The cacheAge should be given in minutes
+func readCache(path string, cacheAge int) (jsonData []byte, cacheStatus bool, err error) {
+	now := time.Now()
+	then := now.Add(time.Duration(-cacheAge) * time.Minute)
+	cacheFileObject, err := getTempFilePath(path)
+	if err != nil {
+		return jsonData, false, err
+	}
+	thePath, err := filepath.Abs(filepath.Dir(cacheFileObject.Name()))
+	if err != nil {
+		return jsonData, false, err
+	}
+	file, err := os.Stat(thePath)
+	if err == nil {
+		diff := then.Before(file.ModTime())
+		if diff {
+			jsonData, err = ioutil.ReadAll(cacheFileObject)
+			if err != nil {
+				return jsonData, false, err
+			}
+			if len(jsonData) == 0 {
+				return jsonData, false, err
+			}
+			return jsonData, true, err
+		}
+		return jsonData, false, err
+	} else if os.IsNotExist(err) {
+		err = nil
+		return jsonData, false, err
+	} else {
+		return jsonData, false, err
 	}
 }
 
@@ -305,6 +360,26 @@ func AugmentHost(request *phabricator.Request, hostData map[string]interface{}, 
 	return hostData
 }
 
+// Returns the path to the temporary file
+// It uses the tmp path that used by the OS per default
+func getTempFilePath(fileName string) (file *os.File, err error) {
+	filePathGlob, err := filepath.Abs(os.TempDir() + fileName + "*")
+	matches, err := filepath.Glob(filePathGlob)
+	if err != nil {
+		file, err = ioutil.TempFile(os.TempDir(), fileName)
+		return file, err
+	}
+	if len(matches) == 1 {
+		return os.Open(matches[0])
+	}
+	// Remove all the temp files that are not needed
+	for _, path := range matches {
+		err = os.Remove(path)
+	}
+	file, err = ioutil.TempFile(os.TempDir(), fileName)
+	return file, err
+}
+
 // Main Application
 func main() {
 	// Read the configuration
@@ -318,8 +393,17 @@ func main() {
 		// Check if the vagrant mode is on
 		vagrant := c.String("vagrant")
 		listIsOn := c.Bool("list")
+		prometheusIsOne := c.Bool("prometheus")
 		// Manage the --list command
 		if listIsOn {
+			cachedData, cacheStatus, err := readCache(cacheFile, 10)
+			if cacheStatus {
+				if err != nil {
+					panic(err)
+				}
+				fmt.Print(string(cachedData))
+				return nil
+			}
 			list, err := List(&request, vagrant, Config.Ansible.Playbook)
 			if err != nil {
 				panic(err)
@@ -327,7 +411,13 @@ func main() {
 			list.Augment(&request, Config.Wrapper.Passphrase, Config.Wrapper.Json)
 			printedData := list.Sanitize()
 			jsonData, err := json.Marshal(printedData)
+			saveCache(jsonData, cacheFile)
 			fmt.Print(string(jsonData))
+		}
+		// Creates the prometheus dynamic scraps from the Almanac repo
+		// --prometheus
+		if prometheusIsOne {
+
 		}
 		// Manage the --host command
 		host := c.String("host")
