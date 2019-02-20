@@ -17,6 +17,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -49,6 +50,13 @@ type Output struct {
 	Meta  struct {
 		HostVars map[string]map[string]interface{} `json:"hostvars, omitifempty"`
 	} `json:"_meta"`
+}
+
+// PrometheusOutput is used to create
+// the output that can be read by prometheus
+type PrometheusOutput struct {
+	Labels  map[string]string `json:"labels, omitifempty"`
+	Targets interface{}       `json:"targets, omitifempty"`
 }
 
 //MarshalJSON the json marshal for the output
@@ -159,6 +167,58 @@ func (output *Output) Augment(request *phabricator.Request, PassphraseWrapper st
 		}
 		output.Group[k] = v
 	}
+}
+
+// GetPrometheusData returns the monitoring data for every host and group. If the host has its own
+// prometheus-config this will be used, when not the group settings will be used.
+// The script will be used here to create the dynamic configuration in Prometheus
+func GetPrometheusData(request *phabricator.Request, JsonWrapper string) (allOutputs []PrometheusOutput, err error) {
+	services, err := phabricator.GetServices(request)
+	allOutputs = make([]PrometheusOutput, 0)
+	for _, d := range services.Result.Data {
+		if len(d.Attachments.Bindings.Bindings) != 0 {
+			config := ""
+			for _, property := range d.Attachments.Properties.Properties {
+				if property.Key == "prometheus-config" {
+					config = property.Value
+				}
+			}
+			for _, v := range d.Attachments.Bindings.Bindings {
+				host, err := CreateHost(request, v.Interface.Device.Name)
+				if err != nil {
+					panic(err)
+				}
+				if val, ok := host["prometheus-config"]; ok {
+					config = val.(string)
+				}
+
+				m, isJson, err := HandleJson(JsonWrapper, config)
+				if isJson {
+					for _, data := range m.([]interface{}) {
+						name, nameOk := data.(map[string]interface{})["name"]
+						port, portOk := data.(map[string]interface{})["port"]
+						if nameOk && portOk {
+							targets := make([]string, 0)
+							target := v.Interface.Address + ":" +
+								strconv.FormatFloat(port.(float64), 'f', -1, 64)
+							targets = append(targets, target)
+							group := d.Fields.Name
+							labels := make(map[string]string, 0)
+							labels["job"] = name.(string)
+							labels["group"] = group
+							labels["ip"] = v.Interface.Address
+							labels["host"] = v.Interface.Device.Name
+							prometheusOutput := PrometheusOutput{
+								Labels:  labels,
+								Targets: targets}
+							allOutputs = append(allOutputs, prometheusOutput)
+						}
+					}
+				}
+			}
+		}
+	}
+	return allOutputs, err
 }
 
 // HandleJson returns converts the json to representable strings
@@ -336,7 +396,7 @@ func CreateCommandLine() *cli.App {
 			Name:  "host, s",
 			Usage: "List the properties for the given host",
 		},
-		cli.StringFlag{
+		cli.BoolFlag{
 			Name:  "prometheus, p",
 			Usage: "Returns the list of services supported by Prometheus for the given host",
 		},
@@ -417,7 +477,11 @@ func main() {
 		// Creates the prometheus dynamic scraps from the Almanac repo
 		// --prometheus
 		if prometheusIsOne {
-
+			prometheusData, err := GetPrometheusData(&request, Config.Wrapper.Json)
+			if err == nil {
+				jsonData, _ := json.Marshal(prometheusData)
+				fmt.Println(string(jsonData))
+			}
 		}
 		// Manage the --host command
 		host := c.String("host")
