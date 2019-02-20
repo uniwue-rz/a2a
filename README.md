@@ -264,8 +264,8 @@ receivers:
 ```
 
 To use this part of inventory, you should simply give the existing yaml 
-configuration as input and this script will read that file and adds the 
-needed data to the file and save it again on the same path.
+configuration as input and this script will read that file and adds your changes
+and print the file in output. You should write it copy it back in the right place.
 
 ```lang=bash
 a2a -m /etc/alert-manager/alert-manager.yaml

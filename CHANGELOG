@@ -5,6 +5,7 @@
 - Added the Prometheus output type
 - Better Passphrase data resolve, make the application faster
 - Added 10 Minutes cache time for the data from phabricator, this make the application faster for repetitive tasks
+- Added the Prometheus alert system
 
 ## [0.0.1] 2017-11-06
 - First working version
