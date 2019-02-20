@@ -217,7 +217,7 @@ To run the inventory in prometheus mode you should call:
 
 ```lang=bash
 a2a -p
-``
+```
 
 The configuration should be a json value that should contain the following values:
 
