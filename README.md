@@ -207,6 +207,35 @@ source /etc/profile.local
 
 These files exists in repository as `script.sh.dist`, `a2a-config.sh.dist` and `Vagrantfile.dist`.
 
+## Prometheus Monitoring
+
+This inventory system can also used almanac to create the dynamic monitoring for every host (device) and
+service (group). The property `prometheus-config` will be used to create the scrape data for the groups
+and devices existing in almanac. You can overwrite the group `prometheus-config` in a given host.
+
+To run the inventory in prometheus mode you should call:
+
+```lang=bash
+a2a -p
+``
+
+The configuration should be a json value that should contain the following values:
+
+```lang=json
+{
+    "name" : "job-name-in-prometheus",
+    "port": "the-port-the-exporter-listens",
+    "exporter": "the-name-of-the-exporter"
+}
+```
+
+The group,host and ip address will be added by the inventory on hand your service, device configurations.
+The result will be something like this:
+
+```lang=json
+[{"labels":{"group":"service","host":"device-name","ip":"device-address","job":"job-name"},"targets":["device-address:port"]}]
+```
+
 ## Build
 
 You can build your own binaries from the source code, using golang standard
