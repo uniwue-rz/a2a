@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/prometheus/alertmanager/config"
 	"github.com/uniwue-rz/phabricator-go"
 	"github.com/urfave/cli"
 	"gopkg.in/gcfg.v1"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"time"
@@ -57,6 +59,116 @@ type Output struct {
 type PrometheusOutput struct {
 	Labels  map[string]string `json:"labels, omitifempty"`
 	Targets interface{}       `json:"targets, omitifempty"`
+}
+
+// readAlertManagerConfig Reads the alert manager config file and returns
+// The configuration data and content as byte. If there is an error
+// reading the file it panics
+func readAlertManagerConfig(path string) (*config.Config, []byte, error) {
+	dataConfig, content, err := config.LoadFile(path)
+	if err != nil {
+		panic(err)
+	}
+	return dataConfig, content, err
+}
+
+func manageAlertManager(configPath string, request *phabricator.Request, jsonWrapper string) {
+	dataConfig, _, err := readAlertManagerConfig(configPath)
+	if err != nil {
+		panic(err)
+	}
+	routes, receivers := getGroupRouteReceivers(request, jsonWrapper)
+	dataConfig = addRouteReceivers(dataConfig, routes, receivers)
+	fmt.Println(dataConfig)
+}
+
+func getGroupRouteReceivers(request *phabricator.Request, jsonWrapper string) (routes []config.Route, receivers []config.Receiver) {
+	services, err := phabricator.GetServices(request)
+	if err != nil {
+		panic(err)
+	}
+	for _, d := range services.Result.Data {
+		matchArray := make(map[string]string)
+		groupName := d.Fields.Name
+		matchArray["group"] = groupName
+		for _, property := range d.Attachments.Properties.Properties {
+			if property.Key == "alertmanager-config" {
+				val, isJson, _ := HandleJson(jsonWrapper, property.Value)
+				if isJson {
+					for _, data := range val.([]interface{}) {
+						name, nameOk := data.(map[string]interface{})["name"]
+						alertType, alertTypeOk := data.(map[string]interface{})["type"]
+						receiverConfig, receiverConfigOK := data.(map[string]interface{})["receiver-config"]
+						matchInConfig, matchingConfigOk := data.(map[string]interface{})["matching-config"]
+						// Adds the matching config to the match array if extra information exist
+						if matchingConfigOk {
+							for k, val := range matchInConfig.(map[string]string) {
+								matchArray[k] = val
+							}
+						}
+						if nameOk && alertTypeOk && receiverConfigOK {
+							receiverName := groupName + "-" + name.(string)
+							route := config.Route{
+								Receiver: receiverName,
+								Match:    matchArray,
+							}
+							routes = append(routes, route)
+							receiver := config.Receiver{Name: receiverName}
+							if alertType == "email" {
+								toEmail, toEmailOK := receiverConfig.(map[string]interface{})["to"]
+								emailConfig := config.EmailConfig{}
+								if toEmailOK {
+									emailConfig.To = toEmail.(string)
+								}
+								textEmail, textEmailOk := receiverConfig.(map[string]interface{})["text"]
+								if textEmailOk {
+									emailConfig.Text = textEmail.(string)
+								}
+								receiver.EmailConfigs = append(receiver.EmailConfigs, &emailConfig)
+							}
+							receivers = append(receivers, receiver)
+						}
+					}
+				}
+			}
+		}
+	}
+	return routes, receivers
+}
+
+// addRouteReceivers Adds the routes and receivers to the existing configuration.
+func addRouteReceivers(alertManagerConfig *config.Config, routes []config.Route, receivers []config.Receiver) *config.Config {
+	for _, route := range routes {
+		if alertManagerConfigContainsRoute(alertManagerConfig, route) == false {
+			alertManagerConfig.Route.Routes = append(alertManagerConfig.Route.Routes, &route)
+		}
+	}
+	for _, receiver := range receivers {
+		if alertManagerConfigContainsReceiver(alertManagerConfig, receiver) == false {
+			alertManagerConfig.Receivers = append(alertManagerConfig.Receivers, &receiver)
+		}
+	}
+	return alertManagerConfig
+}
+
+// alertManagerConfigContainsRoute Checks if the alertmanager configuration contains the given route
+func alertManagerConfigContainsRoute(alertManagerConfig *config.Config, route config.Route) bool {
+	for _, alertRoute := range alertManagerConfig.Route.Routes {
+		if alertRoute.Receiver == route.Receiver && reflect.DeepEqual(route.Match, alertRoute.Match) {
+			return true
+		}
+	}
+	return false
+}
+
+// alertManagerConfigContainsReceiver Checks if the alertmanager configuration contains the given receiver
+func alertManagerConfigContainsReceiver(alertManagerConfig *config.Config, receiver config.Receiver) bool {
+	for _, alertReceiver := range alertManagerConfig.Receivers {
+		if alertReceiver.Name == receiver.Name {
+			return true
+		}
+	}
+	return false
 }
 
 //MarshalJSON the json marshal for the output
@@ -177,10 +289,10 @@ func GetPrometheusData(request *phabricator.Request, JsonWrapper string) (allOut
 	allOutputs = make([]PrometheusOutput, 0)
 	for _, d := range services.Result.Data {
 		if len(d.Attachments.Bindings.Bindings) != 0 {
-			config := ""
+			prometheusConfig := ""
 			for _, property := range d.Attachments.Properties.Properties {
 				if property.Key == "prometheus-config" {
-					config = property.Value
+					prometheusConfig = property.Value
 				}
 			}
 			for _, v := range d.Attachments.Bindings.Bindings {
@@ -189,10 +301,10 @@ func GetPrometheusData(request *phabricator.Request, JsonWrapper string) (allOut
 					panic(err)
 				}
 				if val, ok := host["prometheus-config"]; ok {
-					config = val.(string)
+					prometheusConfig = val.(string)
 				}
 
-				m, isJson, err := HandleJson(JsonWrapper, config)
+				m, isJson, err := HandleJson(JsonWrapper, prometheusConfig)
 				if isJson {
 					for _, data := range m.([]interface{}) {
 						name, nameOk := data.(map[string]interface{})["name"]
@@ -396,6 +508,11 @@ func CreateCommandLine() *cli.App {
 			Name:  "host, s",
 			Usage: "List the properties for the given host",
 		},
+		cli.StringFlag{
+			Name: "alertmanager, m",
+			Usage: "Returns the alert manager settings, " +
+				"it reads the existing file and adds the needed data to the alerts",
+		},
 		cli.BoolFlag{
 			Name:  "prometheus, p",
 			Usage: "Returns the list of services supported by Prometheus for the given host",
@@ -482,6 +599,13 @@ func main() {
 				jsonData, _ := json.Marshal(prometheusData)
 				fmt.Println(string(jsonData))
 			}
+		}
+		// Manages the alertmanager command
+		// Reads the alertManager configs and rewrites with new routes.
+		// --alertmanager
+		alertManagerConfigPath := c.String("alertmanager")
+		if alertManagerConfigPath != "" {
+			manageAlertManager(alertManagerConfigPath, &request, Config.Wrapper.Json)
 		}
 		// Manage the --host command
 		host := c.String("host")

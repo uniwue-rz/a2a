@@ -236,6 +236,41 @@ The result will be something like this:
 [{"labels":{"group":"service","host":"device-name","ip":"device-address","job":"job-name"},"targets":["device-address:port"]}]
 ```
 
+## Prometheus Alerting
+
+Prometheus alerting consist of two parts, the first part is the rules that the alerts should be sent based on them. At the moment
+this rules are managed in a central repository on the prometheus machine and only prometheus admin can change them. The second part
+uses the AlertManager to dispatch the alert to the right place. A2A can be used to create `route` and `receivers` part of the alert manager
+based on the services (groups) in phabricator.  With this it is possible to send errors to the given destination.
+
+You can use this script to create your alerting mechanism for the given hosts. For that to a group (service) in almanac, you will need to
+add the following configuration `alertmanager-config` as property:
+
+```lang=json
+[{"type":"email/webhook","name":"unique-name-of-receiver","config":{"to":"email-of-user"}}]
+```
+
+This will be converted to the given route:
+
+```lang=yaml
+routes:
+    group: "name-of-the-group"
+    receiver: unique-name-of-receiver
+    
+receivers:
+    name: unique-name-of-receiver
+    email_config:
+        - to: email-of-user
+```
+
+To use this part of inventory, you should simply give the existing yaml 
+configuration as input and this script will read that file and adds the 
+needed data to the file and save it again on the same path.
+
+```lang=bash
+a2a -m /etc/alert-manager/alert-manager.yaml
+```
+
 ## Build
 
 You can build your own binaries from the source code, using golang standard
