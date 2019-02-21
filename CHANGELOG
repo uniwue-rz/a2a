@@ -3,6 +3,8 @@
 ## [0.0.4] 2019-02-21
 
 - Make the send_resolved = true also the default value for the prometheus alerting
+- The A2A generated routes and receivers in alertmanager are marked by dynamic-groupname-type-email
+- The groupName label can not be changed
 
 ## [0.0.3] 2019-02-21
 

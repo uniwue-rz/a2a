@@ -24,7 +24,6 @@ import (
 )
 
 const cacheFile = "a2a_cache"
-const prometheusCache = "a2a_cache_prometheus"
 
 // AnsiblePlaybook will only be read in the Vagrant mode.
 type AnsiblePlaybook struct {
@@ -103,11 +102,16 @@ func getGroupRouteReceivers(request *phabricator.Request, jsonWrapper string) (r
 						// Adds the matching config to the match array if extra information exist
 						if matchingConfigOk {
 							for k, val := range matchInConfig.(map[string]string) {
-								matchArray[k] = val
+								// The group can not be changed. It is a security
+								// feature added so the groups always match Almanac
+								if k != "group" {
+									matchArray[k] = val
+								}
 							}
 						}
 						if nameOk && alertTypeOk && receiverConfigOK {
-							receiverName := groupName + "-" + name.(string)
+							// The is marked by the A2A so it can be found again
+							receiverName := "dynamic-" + groupName + "-" + alertType.(string) + "-" + name.(string)
 							route := config.Route{
 								Receiver: receiverName,
 								Match:    matchArray,
@@ -157,36 +161,34 @@ func getGroupRouteReceivers(request *phabricator.Request, jsonWrapper string) (r
 // addRouteReceivers Adds the routes and receivers to the existing configuration.
 func addRouteReceivers(alertManagerConfig *config.Config, routes []config.Route, receivers []config.Receiver) *config.Config {
 	for _, route := range routes {
-		if alertManagerConfigContainsRoute(alertManagerConfig, route) == false {
-			alertManagerConfig.Route.Routes = append(alertManagerConfig.Route.Routes, &route)
-		}
+		handleExistingRoute(alertManagerConfig, route)
+		alertManagerConfig.Route.Routes = append(alertManagerConfig.Route.Routes, &route)
 	}
 	for _, receiver := range receivers {
-		if alertManagerConfigContainsReceiver(alertManagerConfig, receiver) == false {
-			alertManagerConfig.Receivers = append(alertManagerConfig.Receivers, &receiver)
-		}
+		handleExistingReceiver(alertManagerConfig, receiver)
+		alertManagerConfig.Receivers = append(alertManagerConfig.Receivers, &receiver)
 	}
 	return alertManagerConfig
 }
 
-// alertManagerConfigContainsRoute Checks if the alertmanager configuration contains the given route
-func alertManagerConfigContainsRoute(alertManagerConfig *config.Config, route config.Route) bool {
-	for _, alertRoute := range alertManagerConfig.Route.Routes {
+// handleExistingRoute Checks if the alert-manager configuration contains the given route
+func handleExistingRoute(alertManagerConfig *config.Config, route config.Route) {
+	for k, alertRoute := range alertManagerConfig.Route.Routes {
 		if alertRoute.Receiver == route.Receiver && reflect.DeepEqual(route.Match, alertRoute.Match) {
-			return true
+			alertManagerConfig.Route.Routes[k] = alertManagerConfig.Route.Routes[len(alertManagerConfig.Route.Routes)-1]
+			alertManagerConfig.Route.Routes = alertManagerConfig.Route.Routes[:len(alertManagerConfig.Route.Routes)-1]
 		}
 	}
-	return false
 }
 
-// alertManagerConfigContainsReceiver Checks if the alert manager configuration contains the given receiver
-func alertManagerConfigContainsReceiver(alertManagerConfig *config.Config, receiver config.Receiver) bool {
-	for _, alertReceiver := range alertManagerConfig.Receivers {
+// handleExistingReceiver Checks if the alert manager configuration contains the given receiver
+func handleExistingReceiver(alertManagerConfig *config.Config, receiver config.Receiver) {
+	for k, alertReceiver := range alertManagerConfig.Receivers {
 		if alertReceiver.Name == receiver.Name {
-			return true
+			alertManagerConfig.Receivers[k] = alertManagerConfig.Receivers[len(alertManagerConfig.Receivers)-1]
+			alertManagerConfig.Receivers = alertManagerConfig.Receivers[:len(alertManagerConfig.Receivers)-1]
 		}
 	}
-	return false
 }
 
 //MarshalJSON the json marshal for the output
