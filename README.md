@@ -101,15 +101,15 @@ API. To add a secure variable you should follow these steps:
 
 * You should first add it as private key (ex. SSL, SSH keys) or password
 in Passphrase. You will get a monogram that starts with `K` like `K42`. Don't forget
-to allow API access to the passphrase by clicking the Allow Conduit Access` button.
+to allow API access to the passphrase by clicking the Allow Conduit Access button.
 * In Service or Host add a new property with key that you want and as value add
 the monogram in parenthesis. So `K42` would be `(K42)`.
 * A2A will automatically translate this to the given Monogram to passphrase data.
-
+`
 ### Dynamic Inventory
 To use the dynamic inventory you should point the A2A with the -i option
 so simply run the playbook with:
-
+`
 ```lang=bash
 ansible-playbook -i /usr/local/bin/a2a
 ```
@@ -189,7 +189,7 @@ echo "Passphrase = \"$4\"" >>  /etc/a2a/config
 echo "Json = \"$5\"" >> /etc/a2a/config
 ```
 
-As it is visible you need a script.sh to the magic, this script just set your $VAGRANT_MACHINE variable. You can use this
+As it is visible you need a script.sh to the magic, this script just set your `$VAGRANT_MACHINE` variable. You can use this
 as example:
 
 ```lang=bash
@@ -209,8 +209,8 @@ These files exists in repository as `script.sh.dist`, `a2a-config.sh.dist` and `
 
 ## Prometheus Monitoring
 
-This inventory system can also used almanac to create the dynamic monitoring for every host (device) and
-service (group). The property `prometheus-config` will be used to create the scrape data for the groups
+This inventory system can also used almanac to create the dynamic monitoring for every devices (hosts) and
+services (groups). The property `prometheus-config` will be used to create the scrape data for the groups
 and devices existing in almanac. You can overwrite the group `prometheus-config` in a given host.
 
 To run the inventory in prometheus mode you should call:
@@ -247,7 +247,7 @@ You can use this script to create your alerting mechanism for the given hosts. F
 add the following configuration `alertmanager-config` as property:
 
 ```lang=json
-[{"type":"email/webhook","name":"unique-name-of-receiver","config":{"to":"email-of-user"}}]
+[{"type":"email","name":"unique-name-of-receiver","config":{"to":"email-of-user"}}]
 ```
 
 This will be converted to the given route:
