@@ -135,6 +135,13 @@ func getGroupRouteReceivers(request *phabricator.Request, jsonWrapper string) (r
 								} else {
 									* emailConfig.RequireTLS = false
 								}
+								sendResolved, sendResolvedOk := receiverConfig.(map[string]interface{})["send-resolved"]
+								emailConfig.VSendResolved = true
+								if sendResolvedOk {
+									if sendResolved.(string) == "false" {
+										emailConfig.VSendResolved = false
+									}
+								}
 								receiver.EmailConfigs = append(receiver.EmailConfigs, &emailConfig)
 							}
 							receivers = append(receivers, receiver)
@@ -172,7 +179,7 @@ func alertManagerConfigContainsRoute(alertManagerConfig *config.Config, route co
 	return false
 }
 
-// alertManagerConfigContainsReceiver Checks if the alertmanager configuration contains the given receiver
+// alertManagerConfigContainsReceiver Checks if the alert manager configuration contains the given receiver
 func alertManagerConfigContainsReceiver(alertManagerConfig *config.Config, receiver config.Receiver) bool {
 	for _, alertReceiver := range alertManagerConfig.Receivers {
 		if alertReceiver.Name == receiver.Name {
