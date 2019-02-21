@@ -124,6 +124,17 @@ func getGroupRouteReceivers(request *phabricator.Request, jsonWrapper string) (r
 								if textEmailOk {
 									emailConfig.Text = textEmail.(string)
 								}
+								requireTLS, requireTLSOk := receiverConfig.(map[string]interface{})["require-tls"]
+								emailConfig.RequireTLS = new(bool)
+								if requireTLSOk {
+									if requireTLS.(string) == "false" {
+										* emailConfig.RequireTLS = false
+									} else {
+										* emailConfig.RequireTLS = true
+									}
+								} else {
+									* emailConfig.RequireTLS = false
+								}
 								receiver.EmailConfigs = append(receiver.EmailConfigs, &emailConfig)
 							}
 							receivers = append(receivers, receiver)
