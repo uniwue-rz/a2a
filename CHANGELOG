@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [0.0.5] 2019-03-04
+
+- Fixed an error with index out of bound
+
+
 ## [0.0.4] 2019-02-21
 
 - Make the send_resolved = true also the default value for the prometheus alerting
