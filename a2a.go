@@ -161,23 +161,27 @@ func getGroupRouteReceivers(request *phabricator.Request, jsonWrapper string) (r
 // addRouteReceivers Adds the routes and receivers to the existing configuration.
 func addRouteReceivers(alertManagerConfig *config.Config, routes []config.Route, receivers []config.Receiver) *config.Config {
 	for _, route := range routes {
+		routeToAdd := route
 		handleExistingRoute(alertManagerConfig, route)
-		alertManagerConfig.Route.Routes = append(alertManagerConfig.Route.Routes, &route)
+		alertManagerConfig.Route.Routes = append(alertManagerConfig.Route.Routes, &routeToAdd)
 	}
 	for _, receiver := range receivers {
+		receiverToAdd := receiver
 		handleExistingReceiver(alertManagerConfig, receiver)
-		alertManagerConfig.Receivers = append(alertManagerConfig.Receivers, &receiver)
+		alertManagerConfig.Receivers = append(alertManagerConfig.Receivers, &receiverToAdd)
 	}
 	return alertManagerConfig
 }
 
 // handleExistingRoute Checks if the alert-manager configuration contains the given route
 func handleExistingRoute(alertManagerConfig *config.Config, route config.Route) {
-	for k, alertRoute := range alertManagerConfig.Route.Routes {
+	k := 0;
+	for _, alertRoute := range alertManagerConfig.Route.Routes {
 		if alertRoute.Receiver == route.Receiver && reflect.DeepEqual(route.Match, alertRoute.Match) {
-			alertManagerConfig.Route.Routes[k] = alertManagerConfig.Route.Routes[len(alertManagerConfig.Route.Routes)-1]
-			alertManagerConfig.Route.Routes = alertManagerConfig.Route.Routes[:len(alertManagerConfig.Route.Routes)-1]
+			alertManagerConfig.Route.Routes = alertManagerConfig.Route.Routes[:k + copy(
+				alertManagerConfig.Route.Routes[k:], alertManagerConfig.Route.Routes[k+1:])]
 		}
+		k++
 	}
 }
 
@@ -185,8 +189,8 @@ func handleExistingRoute(alertManagerConfig *config.Config, route config.Route) 
 func handleExistingReceiver(alertManagerConfig *config.Config, receiver config.Receiver) {
 	for k, alertReceiver := range alertManagerConfig.Receivers {
 		if alertReceiver.Name == receiver.Name {
-			alertManagerConfig.Receivers[k] = alertManagerConfig.Receivers[len(alertManagerConfig.Receivers)-1]
-			alertManagerConfig.Receivers = alertManagerConfig.Receivers[:len(alertManagerConfig.Receivers)-1]
+			alertManagerConfig.Receivers = alertManagerConfig.Receivers[:k + copy(
+				alertManagerConfig.Receivers[k:], alertManagerConfig.Receivers[k+1:])]
 		}
 	}
 }
