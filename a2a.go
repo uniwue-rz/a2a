@@ -488,9 +488,11 @@ func ReadAnsiblePlayBook(path string) (playbook []AnsiblePlaybook, err error) {
 
 // GetConfigPaths returns the list of config paths for the given system
 func GetConfigPaths() []string {
-	usr, _ := user.Current()
+	usr, err := user.Current()
+	if err != nil {
+		return []string{"/etc/a2a/config", "config"}
+	}
 	homePath := usr.HomeDir + "/.a2a/config"
-
 	return []string{"/etc/a2a/config", homePath, "config"}
 }
 
