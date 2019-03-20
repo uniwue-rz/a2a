@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [0.0.7] 2019-03-20
+
+- Added the Prometheus blackbox dynamic data generator
+
 ## [0.0.6] 2019-03-04
 
 - Fixed an error when home folder is not found, leads to error

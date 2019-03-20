@@ -53,6 +53,11 @@ type Output struct {
 	} `json:"_meta"`
 }
 
+type BlackboxInput struct {
+	Module  string   `json:"module, omitifempty"`
+	Targets []string `json:"targets"`
+}
+
 // PrometheusOutput is used to create
 // the output that can be read by prometheus
 type PrometheusOutput struct {
@@ -305,6 +310,56 @@ func (output *Output) Augment(request *phabricator.Request, PassphraseWrapper st
 	}
 }
 
+// GetBlackBoxData returns the blackbox targets and data.
+func GetBlackBoxData(request *phabricator.Request, JsonWrapper string) (allOutputs []PrometheusOutput, err error) {
+	services, err := phabricator.GetServices(request)
+	allOutputs = make([]PrometheusOutput, 0)
+	for _, d := range services.Result.Data {
+		if len(d.Attachments.Bindings.Bindings) != 0 {
+			blackBoxConfig := ""
+			for _, property := range d.Attachments.Properties.Properties {
+				if property.Key == "blackbox-config" {
+					blackBoxConfig = property.Value
+				}
+			}
+			for _, v := range d.Attachments.Bindings.Bindings {
+				host, err := CreateHost(request, v.Interface.Device.Name)
+				if err != nil {
+					panic(err)
+				}
+				if val, ok := host["blackbox_config"]; ok {
+					blackBoxConfig = val.(string)
+				}
+				_, isJson, err := HandleJson(JsonWrapper, blackBoxConfig)
+				if isJson {
+					var blackBoxJson []BlackboxInput
+					err := json.Unmarshal([]byte(blackBoxConfig), &blackBoxJson)
+					if err != nil {
+						panic(err)
+					}
+					for _, blackbox := range blackBoxJson {
+						labels := make(map[string]string, 0)
+						group := d.Fields.Name
+						labels["module"] = blackbox.Module
+						labels["job"] = "blackbox"
+						labels["group"] = group
+						labels["ip"] = v.Interface.Address
+						labels["host"] = v.Interface.Device.Name
+						targets := blackbox.Targets
+						prometheusOutput := PrometheusOutput{
+							Labels:  labels,
+							Targets: targets}
+						allOutputs = append(allOutputs, prometheusOutput)
+					}
+
+				}
+			}
+
+		}
+	}
+	return allOutputs, err
+}
+
 // GetPrometheusData returns the monitoring data for every host and group. If the host has its own
 // prometheus-config this will be used, when not the group settings will be used.
 // The script will be used here to create the dynamic configuration in Prometheus
@@ -516,7 +571,7 @@ func ReadConfig() (Config Configuration, err error) {
 // CreateCommandLine creates a command line for the application
 func CreateCommandLine() *cli.App {
 	app := cli.NewApp()
-	app.Version = "0.0.2"
+	app.Version = "0.0.7"
 	app.Author = "Pouyan Azari"
 	app.EnableBashCompletion = true
 	app.Name = "A2A"
@@ -538,6 +593,10 @@ func CreateCommandLine() *cli.App {
 			Name: "alertmanager, m",
 			Usage: "Returns the alert manager settings, " +
 				"it reads the existing file and adds the needed data to the alerts",
+		},
+		cli.BoolFlag{
+			Name:  "blackbox, b",
+			Usage: "Returns the list of services that support the blackbox",
 		},
 		cli.BoolFlag{
 			Name:  "prometheus, p",
@@ -596,7 +655,8 @@ func main() {
 		// Check if the vagrant mode is on
 		vagrant := c.String("vagrant")
 		listIsOn := c.Bool("list")
-		prometheusIsOne := c.Bool("prometheus")
+		prometheusIsOn := c.Bool("prometheus")
+		blackBoxIsOn := c.Bool("blackbox")
 		// Manage the --list command
 		if listIsOn {
 			cachedData, cacheStatus, err := readCache(cacheFile, 10)
@@ -617,9 +677,18 @@ func main() {
 			saveCache(jsonData, cacheFile)
 			fmt.Print(string(jsonData))
 		}
+		// Creates the blackbox settings with modules as labels.
+		// Should use relabeling to make parameter from the label.
+		if blackBoxIsOn {
+			blackBoxData, err := GetBlackBoxData(&request, Config.Wrapper.Json)
+			if err == nil {
+				jsonData, _ := json.Marshal(blackBoxData)
+				fmt.Println(string(jsonData))
+			}
+		}
 		// Creates the prometheus dynamic scraps from the Almanac repo
 		// --prometheus
-		if prometheusIsOne {
+		if prometheusIsOn {
 			prometheusData, err := GetPrometheusData(&request, Config.Wrapper.Json)
 			if err == nil {
 				jsonData, _ := json.Marshal(prometheusData)

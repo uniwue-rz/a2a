@@ -271,6 +271,43 @@ and print the file in output. You should write it copy it back in the right plac
 a2a -m /etc/alert-manager/alert-manager.yaml
 ```
 
+## Prometheus Blackbox
+
+Most of Prometheus metrics are added as whitebox like node exporter or mysql-exporter. These can be added to a given host or service
+automatically with the help of Prometheus monitoring. For blackbox prometheus-blackbox is used. The configuration for the blackbox
+module is consist of two parts. A module which is the module that is used in your blackbox configuration and the targets for the given
+module. and example would be
+
+```lang=json
+[{"module":"http_2xx","targets":["https://uni-wuerzburg.de"]}]
+```
+
+It creates the following dynamic prometheus configuration:
+
+```lang=json
+[{"labels":{"group":"device-service","host":"device-host-name","ip":"device-ip","job":"blackbox","module":"http_2xx"},"targets":["https://uni-wuerzburg.de"]}]
+```
+
+The `module` is a parameter and it should be relabeled, the configuration would be:
+
+```lang=yaml
+ - job_name: blackbox
+   metrics_path: /probe
+   file_sd_configs:
+   - refresh_interval: 2m
+     files:
+       - '/etc/prometheus/dynamic/*_blackbox.json'
+   relabel_configs:
+    - source_labels: [module]
+      target_label: __param_module
+    - source_labels: [__address__]
+      target_label: __param_target
+    - source_labels: [__param_target]
+      target_label: instance
+    - target_label: __address__
+      replacement: 127.0.0.1:9115 # The blackbox exporter.
+``` 
+
 ## Build
 
 You can build your own binaries from the source code, using golang standard
