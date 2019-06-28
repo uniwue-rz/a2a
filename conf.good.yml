@@ -12,8 +12,7 @@ global:
   slack_api_url: "http://mysecret.example.com/"
   http_config:
     proxy_url: 'http://127.0.0.1:1025'
-
-
+    bearer_token: "help_I_am_token"
 
 # The directory from which notification templates are read.
 templates:

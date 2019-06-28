@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [0.0.8] 2019-06-28
+
+- The secrets were written as <secret> when the alertmanager data was read. This is fixed.
+- The Vagrant mode does not used cached data.
+
 ## [0.0.7] 2019-03-20
 
 - Added the Prometheus blackbox dynamic data generator
@@ -11,7 +16,6 @@
 ## [0.0.5] 2019-03-04
 
 - Fixed an error with index out of bound
-
 
 ## [0.0.4] 2019-02-21
 

@@ -5,10 +5,10 @@ package main
 // It supports all the parameters and options detailed there.
 
 import (
+	"./alertmanager/config"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/prometheus/alertmanager/config"
 	"github.com/uniwue-rz/phabricator-go"
 	"github.com/urfave/cli"
 	"gopkg.in/gcfg.v1"
@@ -73,6 +73,7 @@ func readAlertManagerConfig(path string) (*config.Config, []byte, error) {
 	if err != nil {
 		panic(err)
 	}
+
 	return dataConfig, content, err
 }
 
@@ -660,7 +661,7 @@ func main() {
 		// Manage the --list command
 		if listIsOn {
 			cachedData, cacheStatus, err := readCache(cacheFile, 10)
-			if cacheStatus {
+			if cacheStatus && vagrant == "" {
 				if err != nil {
 					panic(err)
 				}
