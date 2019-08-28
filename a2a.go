@@ -677,7 +677,7 @@ func main() {
 		prometheusIsOn := c.Bool("prometheus")
 		blackBoxIsOn := c.Bool("blackbox")
 		cacheIsOff := c.Bool("no-cache")
-		if vagrant == "" {
+		if vagrant != "" {
 			cacheIsOff = true
 		}
 		// Manage the --list command
