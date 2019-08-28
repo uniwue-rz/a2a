@@ -74,6 +74,7 @@ property keys. Therefore when you add a new property, the key is added as a dash
 A2A automatically convert the dashes to underscore in the dynamic inventory result.
 In your playbook you can use the variable with underscores `_`.  Your variable values can be
 anything if you add JSON text it will be parsed as JSON, everything else will be parsed as string.
+The same also applies to the group names, they should not contain `-` or `.`.
 
 Example:
 Almanac property:
@@ -206,6 +207,11 @@ source /etc/profile.local
 ```
 
 These files exists in repository as `script.sh.dist`, `a2a-config.sh.dist` and `Vagrantfile.dist`.
+
+### No Cache Mode
+
+The internal cache of the application can be disable using the 
+`--no-cache` option.
 
 ## Prometheus Monitoring
 

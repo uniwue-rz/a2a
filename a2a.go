@@ -181,7 +181,7 @@ func addRouteReceivers(alertManagerConfig *config.Config, routes []config.Route,
 
 // handleExistingRoute Checks if the alert-manager configuration contains the given route
 func handleExistingRoute(alertManagerConfig *config.Config, route config.Route) {
-	k := 0;
+	k := 0
 	for _, alertRoute := range alertManagerConfig.Route.Routes {
 		if alertRoute.Receiver == route.Receiver && reflect.DeepEqual(route.Match, alertRoute.Match) {
 			alertManagerConfig.Route.Routes = alertManagerConfig.Route.Routes[:k + copy(
@@ -205,6 +205,8 @@ func handleExistingReceiver(alertManagerConfig *config.Config, receiver config.R
 func (output *Output) Sanitize() (data map[string]interface{}) {
 	data = make(map[string]interface{})
 	for k, v := range output.Group {
+		k = ReplaceToUnderscore(k)
+		k = ReplaceDotsToUnderscore(k)
 		data[k] = v
 	}
 	data["_meta"] = output.Meta
@@ -315,6 +317,9 @@ func (output *Output) Augment(request *phabricator.Request, PassphraseWrapper st
 func GetBlackBoxData(request *phabricator.Request, JsonWrapper string) (allOutputs []PrometheusOutput, err error) {
 	services, err := phabricator.GetServices(request)
 	allOutputs = make([]PrometheusOutput, 0)
+	if err != nil {
+		return allOutputs, err
+	}
 	for _, d := range services.Result.Data {
 		if len(d.Attachments.Bindings.Bindings) != 0 {
 			blackBoxConfig := ""
@@ -367,6 +372,9 @@ func GetBlackBoxData(request *phabricator.Request, JsonWrapper string) (allOutpu
 func GetPrometheusData(request *phabricator.Request, JsonWrapper string) (allOutputs []PrometheusOutput, err error) {
 	services, err := phabricator.GetServices(request)
 	allOutputs = make([]PrometheusOutput, 0)
+	if err != nil {
+		return allOutputs, err
+	}
 	for _, d := range services.Result.Data {
 		if len(d.Attachments.Bindings.Bindings) != 0 {
 			prometheusConfig := ""
@@ -437,6 +445,7 @@ func HandlePassphrase(request *phabricator.Request, PassphraseWrapper string, pr
 			passphraseObj, err := phabricator.GetPassPhrasewithId(request, passPhraseKey)
 			if err != nil {
 				passPhrase = ""
+				return passPhrase, false, err
 			}
 			for _, passphraseItem := range passphraseObj.Result.Data {
 				if passphraseItem.Monogram == passPhraseKey {
@@ -509,7 +518,12 @@ func List(request *phabricator.Request, vagrant string, playBookPath string) (ou
 // ReplaceToUnderscore simply replaces the dashes in the given text to underscore for the given keys.
 func ReplaceToUnderscore(key string) string {
 	re := regexp.MustCompile("-")
+	return re.ReplaceAllString(key, "_")
+}
 
+// ReplaceDotsToUnderscore replaces the dots in the given text to underscore fot the given keys
+func ReplaceDotsToUnderscore(key string) string {
+	re := regexp.MustCompile("\\.")
 	return re.ReplaceAllString(key, "_")
 }
 
@@ -603,6 +617,10 @@ func CreateCommandLine() *cli.App {
 			Name:  "prometheus, p",
 			Usage: "Returns the list of services supported by Prometheus for the given host",
 		},
+		cli.BoolFlag{
+			Name:  "no-cache, n",
+			Usage: "Run the application in no cache mode",
+		},
 	}
 
 	return app
@@ -658,10 +676,14 @@ func main() {
 		listIsOn := c.Bool("list")
 		prometheusIsOn := c.Bool("prometheus")
 		blackBoxIsOn := c.Bool("blackbox")
+		cacheIsOff := c.Bool("no-cache")
+		if vagrant == "" {
+			cacheIsOff = true
+		}
 		// Manage the --list command
 		if listIsOn {
 			cachedData, cacheStatus, err := readCache(cacheFile, 10)
-			if cacheStatus && vagrant == "" {
+			if cacheStatus && !cacheIsOff {
 				if err != nil {
 					panic(err)
 				}
