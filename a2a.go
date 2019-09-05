@@ -5,11 +5,12 @@ package main
 // It supports all the parameters and options detailed there.
 
 import (
-	"./alertmanager/config"
+	//	"./alertmanager/config"
+	"app-a2a/alertmanager/config"
+	phabricator "app-a2a/api-phabricator-go"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/uniwue-rz/phabricator-go"
 	"github.com/urfave/cli"
 	"gopkg.in/gcfg.v1"
 	"gopkg.in/yaml.v2"
@@ -20,6 +21,7 @@ import (
 	"reflect"
 	"regexp"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -77,21 +79,23 @@ func readAlertManagerConfig(path string) (*config.Config, []byte, error) {
 	return dataConfig, content, err
 }
 
-func manageAlertManager(configPath string, request *phabricator.Request, jsonWrapper string) {
+func manageAlertManager(p *phabricator.Phabricator, configPath string, jsonWrapper string) {
 	dataConfig, _, err := readAlertManagerConfig(configPath)
 	if err != nil {
 		panic(err)
 	}
-	routes, receivers := getGroupRouteReceivers(request, jsonWrapper)
+	routes, receivers := getGroupRouteReceivers(p, jsonWrapper)
 	dataConfig = addRouteReceivers(dataConfig, routes, receivers)
 	fmt.Println(dataConfig)
 }
 
-func getGroupRouteReceivers(request *phabricator.Request, jsonWrapper string) (routes []config.Route, receivers []config.Receiver) {
-	services, err := phabricator.GetServices(request)
+func getGroupRouteReceivers(p *phabricator.Phabricator, jsonWrapper string) (routes []config.Route, receivers []config.Receiver) {
+	services, err := phabricator.GetServices(p)
+
 	if err != nil {
 		panic(err)
 	}
+
 	for _, d := range services.Result.Data {
 		matchArray := make(map[string]string)
 		groupName := d.Fields.Name
@@ -281,11 +285,66 @@ func readCache(path string, cacheAge int) (jsonData []byte, cacheStatus bool, er
 }
 
 // Augment adds the result from passphrase and sanitizes the json results, so everything looks polished.
-func (output *Output) Augment(request *phabricator.Request, PassphraseWrapper string, JsonWrapper string) {
+func (output *Output) AugmentParallel(p *phabricator.Phabricator, PassphraseWrapper string, JsonWrapper string) {
 
+	var wg sync.WaitGroup
+	wg.Add(len(output.Meta.HostVars))
+
+	var hostVarsSyncMap sync.Map
+	for k, v := range output.Meta.HostVars {
+		go func(k string, v map[string]interface{}) {
+			defer wg.Done()
+			for i, j := range v {
+				passphrase, isPassphrase, _ := HandlePassphrase(p, PassphraseWrapper, j.(string))
+				if isPassphrase {
+					v[i] = passphrase
+				}
+				jsonData, isJson, _ := HandleJson(JsonWrapper, j.(string))
+				if isJson {
+					v[i] = jsonData
+				}
+			}
+
+			hostVarsSyncMap.Store(k, v)
+
+		}(k, v)
+	}
+	wg.Wait()
+	hostVarsSyncMap.Range(func(k interface{}, v interface{}) bool {
+		output.Meta.HostVars[k.(string)] = v.(map[string]interface{})
+		return true
+	})
+
+	wg.Add(len(output.Group))
+	var outputGroupSyncMap sync.Map
+	for k, v := range output.Group {
+		go func(k string, v Group) {
+			defer wg.Done()
+			for i, j := range v.Vars {
+				passphrase, isPassphrase, _ := HandlePassphrase(p, PassphraseWrapper, j.(string))
+				if isPassphrase {
+					v.Vars[i] = passphrase
+				}
+				jsonData, isJson, _ := HandleJson(JsonWrapper, j.(string))
+				if isJson {
+					v.Vars[i] = jsonData
+				}
+			}
+			outputGroupSyncMap.Store(k, v)
+		}(k, v)
+	}
+	wg.Wait()
+	outputGroupSyncMap.Range(func(k interface{}, v interface{}) bool {
+		output.Group[k.(string)] = v.(Group)
+		return true
+	})
+}
+
+// Augment adds the result from passphrase and sanitizes the json results, so everything looks polished.
+func (output *Output) AugmentBlocking(p *phabricator.Phabricator, PassphraseWrapper string, JsonWrapper string) {
 	for k, v := range output.Meta.HostVars {
 		for i, j := range v {
-			passphrase, isPassphrase, _ := HandlePassphrase(request, PassphraseWrapper, j.(string))
+			passphrase, isPassphrase, _ := HandlePassphrase(p, PassphraseWrapper, j.(string))
 			if isPassphrase {
 				v[i] = passphrase
 			}
@@ -300,7 +359,7 @@ func (output *Output) Augment(request *phabricator.Request, PassphraseWrapper st
 
 	for k, v := range output.Group {
 		for i, j := range v.Vars {
-			passphrase, isPassphrase, _ := HandlePassphrase(request, PassphraseWrapper, j.(string))
+			passphrase, isPassphrase, _ := HandlePassphrase(p, PassphraseWrapper, j.(string))
 			if isPassphrase {
 				v.Vars[i] = passphrase
 			}
@@ -313,9 +372,14 @@ func (output *Output) Augment(request *phabricator.Request, PassphraseWrapper st
 	}
 }
 
+func (output *Output) Augment(p *phabricator.Phabricator, PassphraseWrapper string, JsonWrapper string) {
+	output.AugmentParallel(p, PassphraseWrapper, JsonWrapper)
+}
+
 // GetBlackBoxData returns the blackbox targets and data.
-func GetBlackBoxData(request *phabricator.Request, JsonWrapper string) (allOutputs []PrometheusOutput, err error) {
-	services, err := phabricator.GetServices(request)
+func GetBlackBoxData(p *phabricator.Phabricator, JsonWrapper string) (allOutputs []PrometheusOutput, err error) {
+	services, err := phabricator.GetServices(p)
+
 	allOutputs = make([]PrometheusOutput, 0)
 	if err != nil {
 		return allOutputs, err
@@ -329,14 +393,17 @@ func GetBlackBoxData(request *phabricator.Request, JsonWrapper string) (allOutpu
 				}
 			}
 			for _, v := range d.Attachments.Bindings.Bindings {
-				host, err := CreateHost(request, v.Interface.Device.Name)
-				if err != nil {
-					panic(err)
-				}
+				host, err := CreateHost(p, v.Interface.Device.Name)
+
 				if val, ok := host["blackbox_config"]; ok {
 					blackBoxConfig = val.(string)
 				}
+
 				_, isJson, err := HandleJson(JsonWrapper, blackBoxConfig)
+				if err != nil {
+					panic(err)
+				}
+
 				if isJson {
 					var blackBoxJson []BlackboxInput
 					err := json.Unmarshal([]byte(blackBoxConfig), &blackBoxJson)
@@ -369,8 +436,9 @@ func GetBlackBoxData(request *phabricator.Request, JsonWrapper string) (allOutpu
 // GetPrometheusData returns the monitoring data for every host and group. If the host has its own
 // prometheus-config this will be used, when not the group settings will be used.
 // The script will be used here to create the dynamic configuration in Prometheus
-func GetPrometheusData(request *phabricator.Request, JsonWrapper string) (allOutputs []PrometheusOutput, err error) {
-	services, err := phabricator.GetServices(request)
+func GetPrometheusData(p *phabricator.Phabricator, JsonWrapper string) (allOutputs []PrometheusOutput, err error) {
+	services, err := phabricator.GetServices(p)
+
 	allOutputs = make([]PrometheusOutput, 0)
 	if err != nil {
 		return allOutputs, err
@@ -384,15 +452,16 @@ func GetPrometheusData(request *phabricator.Request, JsonWrapper string) (allOut
 				}
 			}
 			for _, v := range d.Attachments.Bindings.Bindings {
-				host, err := CreateHost(request, v.Interface.Device.Name)
-				if err != nil {
-					panic(err)
-				}
+				host, err := CreateHost(p, v.Interface.Device.Name)
+
 				if val, ok := host["prometheus-config"]; ok {
 					prometheusConfig = val.(string)
 				}
 
 				m, isJson, err := HandleJson(JsonWrapper, prometheusConfig)
+				if err != nil {
+					panic(err)
+				}
 				if isJson {
 					for _, data := range m.([]interface{}) {
 						name, nameOk := data.(map[string]interface{})["name"]
@@ -434,7 +503,7 @@ func HandleJson(JsonWrapper string, propertyKey string) (m interface{}, isJson b
 }
 
 // HandlePassphrase returns the passphrase for the given system
-func HandlePassphrase(request *phabricator.Request, PassphraseWrapper string, propertyKey string) (passPhrase string, isPassphrase bool, err error) {
+func HandlePassphrase(p *phabricator.Phabricator, PassphraseWrapper string, propertyKey string) (passPhrase string, isPassphrase bool, err error) {
 	isPassphrase = false
 	passPhraseRegex := regexp.MustCompile(PassphraseWrapper)
 	if passPhraseRegex.MatchString(propertyKey) {
@@ -442,7 +511,7 @@ func HandlePassphrase(request *phabricator.Request, PassphraseWrapper string, pr
 		if len(passPhraseRegexMatching) > 1 {
 			isPassphrase = true
 			passPhraseKey := passPhraseRegexMatching[1]
-			passphraseObj, err := phabricator.GetPassPhrasewithId(request, passPhraseKey)
+			passphraseObj, err := phabricator.GetPassPhraseWithId(p, passPhraseKey)
 			if err != nil {
 				passPhrase = ""
 				return passPhrase, false, err
@@ -465,11 +534,73 @@ func HandlePassphrase(request *phabricator.Request, PassphraseWrapper string, pr
 }
 
 //List Returns the json list of hosts and their properties
-func List(request *phabricator.Request, vagrant string, playBookPath string) (output Output, err error) {
+func ListParallel(p *phabricator.Phabricator, playBookPath string, vagrant string) (output Output, err error) {
 
 	groupList := make(map[string]Group)
 	hostVars := make(map[string]map[string]interface{})
-	services, err := phabricator.GetServices(request)
+
+	services, err := phabricator.GetServices(p) // -> one request, not worth paralleling
+
+	// Returns the List of services
+	if err != nil {
+		panic(err)
+	}
+
+	type empty struct{}
+	amountOfResultData := len(services.Result.Data)
+	sem := make(chan empty, amountOfResultData) // semaphore pattern
+	for _, d := range services.Result.Data { // currently around 20 loops --> paralleling
+		go func(d phabricator.Device) {
+			var group Group
+			// Add the hosts from the binding
+			for _, v := range d.Attachments.Bindings.Bindings { // Anzahl Bindings: meistens zirka 1-2 --> erstmal nicht parallelisieren
+				interfaceDeviceName := v.Interface.Device.Name
+				values, _ := CreateHost(p, interfaceDeviceName) // -> one request
+				hostVars[v.Interface.Device.Name] = values
+				group.Hosts = append(group.Hosts, v.Interface.Device.Name)
+			}
+
+			vars := make(map[string]interface{})
+			for _, v := range d.Attachments.Properties.Properties {
+				key := ReplaceToUnderscore(v.Key)
+				vars[key] = v.Value
+			}
+			group.Vars = vars
+
+			// This fixes the problem with the groups with empty hosts.
+			if len(group.Hosts) == 0 {
+				group.Hosts = []string{}
+			}
+			groupList[d.Fields.Name] = group
+
+			sem <- empty{}
+		}(d)
+	}
+
+	// wait for goroutines to finish
+	for i := 0; i < amountOfResultData; i++ {
+		<-sem
+	}
+
+	output.Meta.HostVars = hostVars
+	output.Group = groupList
+	// If the list is running in vagrant mode
+	if vagrant != "" {
+		playbook, err := ReadAnsiblePlayBook(playBookPath)
+		if err != nil {
+			panic(err)
+		}
+		output.AddHost(vagrant, playbook[0].Host)
+	}
+
+	return output, err
+}
+
+func ListBlocking(p *phabricator.Phabricator, playBookPath string, vagrant string) (output Output, err error) {
+
+	groupList := make(map[string]Group)
+	hostVars := make(map[string]map[string]interface{})
+	services, err := phabricator.GetServices(p)
 
 	// Returns the List of services
 	if err != nil {
@@ -480,7 +611,7 @@ func List(request *phabricator.Request, vagrant string, playBookPath string) (ou
 		// Add the hosts from the binding
 		for _, v := range d.Attachments.Bindings.Bindings {
 			interfaceDeviceName := v.Interface.Device.Name
-			values, err := CreateHost(request, interfaceDeviceName)
+			values, err := CreateHost(p, interfaceDeviceName)
 			if err != nil {
 				panic(err)
 			}
@@ -515,6 +646,10 @@ func List(request *phabricator.Request, vagrant string, playBookPath string) (ou
 	return output, err
 }
 
+func List(p *phabricator.Phabricator, playBookPath string, vagrant string) (output Output, err error) {
+	return ListParallel(p, playBookPath, vagrant)
+}
+
 // ReplaceToUnderscore simply replaces the dashes in the given text to underscore for the given keys.
 func ReplaceToUnderscore(key string) string {
 	re := regexp.MustCompile("-")
@@ -528,12 +663,14 @@ func ReplaceDotsToUnderscore(key string) string {
 }
 
 // CreateHost Creates the host for the given device name
-func CreateHost(request *phabricator.Request, devName string) (values map[string]interface{}, err error) {
+func CreateHost(p *phabricator.Phabricator, devName string) (values map[string]interface{}, err error) {
 	values = make(map[string]interface{})
-	device, err := phabricator.GetDevice(request, devName)
+
+	device, err := phabricator.GetDevice(p, devName) // -> one request
 	if err != nil {
 		panic(err)
 	}
+
 	// Collect the properties
 	for _, v := range device.Result.Data {
 		for _, i := range v.Attachments.Properties.Properties {
@@ -627,9 +764,9 @@ func CreateCommandLine() *cli.App {
 }
 
 // AugmentHost augments the given host with th
-func AugmentHost(request *phabricator.Request, hostData map[string]interface{}, PassphraseWrapper string, JsonWrapper string) map[string]interface{} {
+func AugmentHost(p *phabricator.Phabricator, hostData map[string]interface{}, PassphraseWrapper string, JsonWrapper string) map[string]interface{} {
 	for k, v := range hostData {
-		passphrase, isPassphrase, _ := HandlePassphrase(request, PassphraseWrapper, v.(string))
+		passphrase, isPassphrase, _ := HandlePassphrase(p, PassphraseWrapper, v.(string))
 		if isPassphrase {
 			hostData[k] = passphrase
 		}
@@ -668,7 +805,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	request := phabricator.NewRequest(Config.Phabricator.ApiURL, Config.Phabricator.ApiToken)
+	p := phabricator.NewPhabricator(Config.Phabricator.ApiURL, Config.Phabricator.ApiToken)
 	app := CreateCommandLine()
 	app.Action = func(c *cli.Context) error {
 		// Check if the vagrant mode is on
@@ -690,11 +827,11 @@ func main() {
 				fmt.Print(string(cachedData))
 				return nil
 			}
-			list, err := List(&request, vagrant, Config.Ansible.Playbook)
+			list, err := List(p, Config.Ansible.Playbook, vagrant)
 			if err != nil {
 				panic(err)
 			}
-			list.Augment(&request, Config.Wrapper.Passphrase, Config.Wrapper.Json)
+			list.Augment(p, Config.Wrapper.Passphrase, Config.Wrapper.Json)
 			printedData := list.Sanitize()
 			jsonData, err := json.Marshal(printedData)
 			saveCache(jsonData, cacheFile)
@@ -703,7 +840,7 @@ func main() {
 		// Creates the blackbox settings with modules as labels.
 		// Should use relabeling to make parameter from the label.
 		if blackBoxIsOn {
-			blackBoxData, err := GetBlackBoxData(&request, Config.Wrapper.Json)
+			blackBoxData, err := GetBlackBoxData(p, Config.Wrapper.Json)
 			if err == nil {
 				jsonData, _ := json.Marshal(blackBoxData)
 				fmt.Println(string(jsonData))
@@ -712,7 +849,7 @@ func main() {
 		// Creates the prometheus dynamic scraps from the Almanac repo
 		// --prometheus
 		if prometheusIsOn {
-			prometheusData, err := GetPrometheusData(&request, Config.Wrapper.Json)
+			prometheusData, err := GetPrometheusData(p, Config.Wrapper.Json)
 			if err == nil {
 				jsonData, _ := json.Marshal(prometheusData)
 				fmt.Println(string(jsonData))
@@ -723,13 +860,13 @@ func main() {
 		// --alertmanager
 		alertManagerConfigPath := c.String("alertmanager")
 		if alertManagerConfigPath != "" {
-			manageAlertManager(alertManagerConfigPath, &request, Config.Wrapper.Json)
+			manageAlertManager(p, alertManagerConfigPath, Config.Wrapper.Json)
 		}
 		// Manage the --host command
 		host := c.String("host")
 		if host != "" {
-			hostData, _ := CreateHost(&request, host)
-			hostData = AugmentHost(&request, hostData, Config.Wrapper.Passphrase, Config.Wrapper.Json)
+			hostData, _ := CreateHost(p, host)
+			hostData = AugmentHost(p, hostData, Config.Wrapper.Passphrase, Config.Wrapper.Json)
 			jsonData, _ := json.Marshal(hostData)
 
 			fmt.Print(string(jsonData))

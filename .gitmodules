@@ -1,0 +1,3 @@
+[submodule "api-phabricator-go"]
+	path = api-phabricator-go
+	url = ssh://gitadm@git.rz.uni-wuerzburg.de:222/source/api-phabricator-go.git
