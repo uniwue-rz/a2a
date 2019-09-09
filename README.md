@@ -314,6 +314,9 @@ The `module` is a parameter and it should be relabeled, the configuration would 
       replacement: 127.0.0.1:9115 # The blackbox exporter.
 ``` 
 
+The blackbox mode can be called with help of `-b` and if some groups 
+should be ignored these can be added as comma separated values with `-i`.
+
 ## Build
 
 You can build your own binaries from the source code, using golang standard
@@ -331,8 +334,6 @@ go build
 
 There are several points that should be covered in the next couple of
 releases:
-- Parallel Queries: to make the queries to Phabricator faster parallel queries should be possible.
-it should use the concurrency feature of Go.
 - Test case: Add test cases for the application
 - Native Packages: This has low priority, but will replace the binary
 releases at some point.

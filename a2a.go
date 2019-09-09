@@ -5,12 +5,11 @@ package main
 // It supports all the parameters and options detailed there.
 
 import (
-	//	"./alertmanager/config"
-	"app-a2a/alertmanager/config"
-	phabricator "app-a2a/api-phabricator-go"
+	"./alertmanager/config"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/uniwue-rz/phabricator-go"
 	"github.com/urfave/cli"
 	"gopkg.in/gcfg.v1"
 	"gopkg.in/yaml.v2"
@@ -21,6 +20,7 @@ import (
 	"reflect"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -90,7 +90,7 @@ func manageAlertManager(p *phabricator.Phabricator, configPath string, jsonWrapp
 }
 
 func getGroupRouteReceivers(p *phabricator.Phabricator, jsonWrapper string) (routes []config.Route, receivers []config.Receiver) {
-	services, err := phabricator.GetServices(p)
+	services, err := p.GetServicesAsync()
 
 	if err != nil {
 		panic(err)
@@ -377,15 +377,21 @@ func (output *Output) Augment(p *phabricator.Phabricator, PassphraseWrapper stri
 }
 
 // GetBlackBoxData returns the blackbox targets and data.
-func GetBlackBoxData(p *phabricator.Phabricator, JsonWrapper string) (allOutputs []PrometheusOutput, err error) {
-	services, err := phabricator.GetServices(p)
+func GetBlackBoxData(p *phabricator.Phabricator, JsonWrapper string, ignoreArray []string) (allOutputs []PrometheusOutput, err error) {
+	services, err := p.GetServicesAsync()
 
 	allOutputs = make([]PrometheusOutput, 0)
 	if err != nil {
 		return allOutputs, err
 	}
 	for _, d := range services.Result.Data {
-		if len(d.Attachments.Bindings.Bindings) != 0 {
+		ignored := false
+		for _, b := range ignoreArray {
+			if b == d.Fields.Name && ignored == false {
+				ignored = true
+			}
+		}
+		if len(d.Attachments.Bindings.Bindings) != 0 && ignored == false {
 			blackBoxConfig := ""
 			for _, property := range d.Attachments.Properties.Properties {
 				if property.Key == "blackbox-config" {
@@ -437,7 +443,7 @@ func GetBlackBoxData(p *phabricator.Phabricator, JsonWrapper string) (allOutputs
 // prometheus-config this will be used, when not the group settings will be used.
 // The script will be used here to create the dynamic configuration in Prometheus
 func GetPrometheusData(p *phabricator.Phabricator, JsonWrapper string) (allOutputs []PrometheusOutput, err error) {
-	services, err := phabricator.GetServices(p)
+	services, err := p.GetServicesAsync()
 
 	allOutputs = make([]PrometheusOutput, 0)
 	if err != nil {
@@ -511,7 +517,7 @@ func HandlePassphrase(p *phabricator.Phabricator, PassphraseWrapper string, prop
 		if len(passPhraseRegexMatching) > 1 {
 			isPassphrase = true
 			passPhraseKey := passPhraseRegexMatching[1]
-			passphraseObj, err := phabricator.GetPassPhraseWithId(p, passPhraseKey)
+			passphraseObj, err := p.GetPassPhraseWithId(passPhraseKey)
 			if err != nil {
 				passPhrase = ""
 				return passPhrase, false, err
@@ -539,7 +545,7 @@ func ListParallel(p *phabricator.Phabricator, playBookPath string, vagrant strin
 	groupList := make(map[string]Group)
 	hostVars := make(map[string]map[string]interface{})
 
-	services, err := phabricator.GetServices(p) // -> one request, not worth paralleling
+	services, err := p.GetServicesAsync() // -> one request, not worth paralleling
 
 	// Returns the List of services
 	if err != nil {
@@ -600,7 +606,7 @@ func ListBlocking(p *phabricator.Phabricator, playBookPath string, vagrant strin
 
 	groupList := make(map[string]Group)
 	hostVars := make(map[string]map[string]interface{})
-	services, err := phabricator.GetServices(p)
+	services, err := p.GetServicesAsync()
 
 	// Returns the List of services
 	if err != nil {
@@ -666,7 +672,7 @@ func ReplaceDotsToUnderscore(key string) string {
 func CreateHost(p *phabricator.Phabricator, devName string) (values map[string]interface{}, err error) {
 	values = make(map[string]interface{})
 
-	device, err := phabricator.GetDevice(p, devName) // -> one request
+	device, err := p.GetDeviceAsync(devName) // -> one request
 	if err != nil {
 		panic(err)
 	}
@@ -754,6 +760,10 @@ func CreateCommandLine() *cli.App {
 			Name:  "prometheus, p",
 			Usage: "Returns the list of services supported by Prometheus for the given host",
 		},
+		cli.StringFlag{
+			Name:  "ignore, i",
+			Usage: "Make the Prometheus or blackbox exporter, ignore the given group",
+		},
 		cli.BoolFlag{
 			Name:  "no-cache, n",
 			Usage: "Run the application in no cache mode",
@@ -814,6 +824,7 @@ func main() {
 		prometheusIsOn := c.Bool("prometheus")
 		blackBoxIsOn := c.Bool("blackbox")
 		cacheIsOff := c.Bool("no-cache")
+		ignoreGroups := c.String("ignore")
 		if vagrant != "" {
 			cacheIsOff = true
 		}
@@ -840,7 +851,11 @@ func main() {
 		// Creates the blackbox settings with modules as labels.
 		// Should use relabeling to make parameter from the label.
 		if blackBoxIsOn {
-			blackBoxData, err := GetBlackBoxData(p, Config.Wrapper.Json)
+			var ignoreArray []string
+			if ignoreGroups != "" {
+				ignoreArray = strings.Split(ignoreGroups, ",")
+			}
+			blackBoxData, err := GetBlackBoxData(p, Config.Wrapper.Json, ignoreArray)
 			if err == nil {
 				jsonData, _ := json.Marshal(blackBoxData)
 				fmt.Println(string(jsonData))

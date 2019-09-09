@@ -1,8 +1,8 @@
 package main
 
 import (
-	phabricator "app-a2a/api-phabricator-go"
 	"encoding/json"
+	"github.com/uniwue-rz/phabricator-go"
 	"testing"
 )
 
@@ -15,20 +15,6 @@ func TestReadConfig(t *testing.T) {
 		panic("ApiToken is empty")
 	}
 }
-
-// Test List function, mainly for profiling it
-//func TestList(t *testing.T) {
-//	Config, err := ReadConfig()
-//	if err != nil {
-//		panic(err)
-//	}
-//	p := phabricator.NewPhabricator(Config.Phabricator.ApiURL, Config.Phabricator.ApiToken)
-//	vagrant := ""
-//	_, err = List(p, Config.Ansible.Playbook, vagrant)
-//	if err != nil {
-//		panic(err)
-//	}
-//}
 
 func TestListWithAugmentParallel(t *testing.T)  {
 	Config, err := ReadConfig()
