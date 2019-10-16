@@ -460,7 +460,7 @@ func GetPrometheusData(p *phabricator.Phabricator, JsonWrapper string) (allOutpu
 			for _, v := range d.Attachments.Bindings.Bindings {
 				host, err := CreateHost(p, v.Interface.Device.Name)
 
-				if val, ok := host["prometheus-config"]; ok {
+				if val, ok := host["prometheus_config"]; ok {
 					prometheusConfig = val.(string)
 				}
 

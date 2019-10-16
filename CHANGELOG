@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [0.0.12] 2019-10-16
+
+- Fixed an error that made accessing host prometheus configs impossible
+
 ## [0.0.11] 2019-09-09
 
 - The phabricator queries are running parallel
