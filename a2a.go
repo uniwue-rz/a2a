@@ -188,7 +188,7 @@ func handleExistingRoute(alertManagerConfig *config.Config, route config.Route) 
 	k := 0
 	for _, alertRoute := range alertManagerConfig.Route.Routes {
 		if alertRoute.Receiver == route.Receiver && reflect.DeepEqual(route.Match, alertRoute.Match) {
-			alertManagerConfig.Route.Routes = alertManagerConfig.Route.Routes[:k + copy(
+			alertManagerConfig.Route.Routes = alertManagerConfig.Route.Routes[:k+copy(
 				alertManagerConfig.Route.Routes[k:], alertManagerConfig.Route.Routes[k+1:])]
 		}
 		k++
@@ -199,7 +199,7 @@ func handleExistingRoute(alertManagerConfig *config.Config, route config.Route) 
 func handleExistingReceiver(alertManagerConfig *config.Config, receiver config.Receiver) {
 	for k, alertReceiver := range alertManagerConfig.Receivers {
 		if alertReceiver.Name == receiver.Name {
-			alertManagerConfig.Receivers = alertManagerConfig.Receivers[:k + copy(
+			alertManagerConfig.Receivers = alertManagerConfig.Receivers[:k+copy(
 				alertManagerConfig.Receivers[k:], alertManagerConfig.Receivers[k+1:])]
 		}
 	}
@@ -442,7 +442,7 @@ func GetBlackBoxData(p *phabricator.Phabricator, JsonWrapper string, ignoreArray
 // GetPrometheusData returns the monitoring data for every host and group. If the host has its own
 // prometheus-config this will be used, when not the group settings will be used.
 // The script will be used here to create the dynamic configuration in Prometheus
-func GetPrometheusData(p *phabricator.Phabricator, JsonWrapper string) (allOutputs []PrometheusOutput, err error) {
+func GetPrometheusData(p *phabricator.Phabricator, JsonWrapper string, ignoreArray []string) (allOutputs []PrometheusOutput, err error) {
 	services, err := p.GetServicesAsync()
 
 	allOutputs = make([]PrometheusOutput, 0)
@@ -450,7 +450,13 @@ func GetPrometheusData(p *phabricator.Phabricator, JsonWrapper string) (allOutpu
 		return allOutputs, err
 	}
 	for _, d := range services.Result.Data {
-		if len(d.Attachments.Bindings.Bindings) != 0 {
+		ignored := false
+		for _, b := range ignoreArray {
+			if b == d.Fields.Name && ignored == false {
+				ignored = true
+			}
+		}
+		if len(d.Attachments.Bindings.Bindings) != 0 && ignored == false {
 			prometheusConfig := ""
 			for _, property := range d.Attachments.Properties.Properties {
 				if property.Key == "prometheus-config" {
@@ -555,7 +561,7 @@ func ListParallel(p *phabricator.Phabricator, playBookPath string, vagrant strin
 	type empty struct{}
 	amountOfResultData := len(services.Result.Data)
 	sem := make(chan empty, amountOfResultData) // semaphore pattern
-	for _, d := range services.Result.Data { // currently around 20 loops --> paralleling
+	for _, d := range services.Result.Data {    // currently around 20 loops --> paralleling
 		go func(d phabricator.Device) {
 			var group Group
 			// Add the hosts from the binding
@@ -729,7 +735,7 @@ func ReadConfig() (Config Configuration, err error) {
 // CreateCommandLine creates a command line for the application
 func CreateCommandLine() *cli.App {
 	app := cli.NewApp()
-	app.Version = "0.0.7"
+	app.Version = "0.0.13"
 	app.Author = "Pouyan Azari"
 	app.EnableBashCompletion = true
 	app.Name = "A2A"
@@ -864,7 +870,11 @@ func main() {
 		// Creates the prometheus dynamic scraps from the Almanac repo
 		// --prometheus
 		if prometheusIsOn {
-			prometheusData, err := GetPrometheusData(p, Config.Wrapper.Json)
+			var ignoreArray []string
+			if ignoreGroups != "" {
+				ignoreArray = strings.Split(ignoreGroups, ",")
+			}
+			prometheusData, err := GetPrometheusData(p, Config.Wrapper.Json, ignoreArray)
 			if err == nil {
 				jsonData, _ := json.Marshal(prometheusData)
 				fmt.Println(string(jsonData))

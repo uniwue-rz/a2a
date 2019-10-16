@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [0.0.13] 2019-10-16
+
+- Fixed the version in the command line arguments
+- Now it is possible to ignore groups in prometheus configs
+
 ## [0.0.12] 2019-10-16
 
 - Fixed an error that made accessing host prometheus configs impossible

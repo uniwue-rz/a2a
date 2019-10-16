@@ -242,6 +242,8 @@ The result will be something like this:
 [{"labels":{"group":"service","host":"device-name","ip":"device-address","job":"job-name"},"targets":["device-address:port"]}]
 ```
 
+if some groups should be ignored these can be added as comma separated values with `-i`.
+
 ## Prometheus Alerting
 
 Prometheus alerting consist of two parts, the first part is the rules that the alerts should be sent based on them. At the moment
