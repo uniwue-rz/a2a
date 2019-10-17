@@ -458,9 +458,11 @@ func GetPrometheusData(p *phabricator.Phabricator, JsonWrapper string, ignoreArr
 		}
 		if len(d.Attachments.Bindings.Bindings) != 0 && ignored == false {
 			prometheusConfig := ""
+			groupPrometheusConfig := ""
 			for _, property := range d.Attachments.Properties.Properties {
 				if property.Key == "prometheus-config" {
 					prometheusConfig = property.Value
+					groupPrometheusConfig = property.Value
 				}
 			}
 			for _, v := range d.Attachments.Bindings.Bindings {
@@ -468,6 +470,8 @@ func GetPrometheusData(p *phabricator.Phabricator, JsonWrapper string, ignoreArr
 
 				if val, ok := host["prometheus_config"]; ok {
 					prometheusConfig = val.(string)
+				}else{
+					prometheusConfig = groupPrometheusConfig
 				}
 
 				m, isJson, err := HandleJson(JsonWrapper, prometheusConfig)
@@ -735,7 +739,7 @@ func ReadConfig() (Config Configuration, err error) {
 // CreateCommandLine creates a command line for the application
 func CreateCommandLine() *cli.App {
 	app := cli.NewApp()
-	app.Version = "0.0.13"
+	app.Version = "0.0.14"
 	app.Author = "Pouyan Azari"
 	app.EnableBashCompletion = true
 	app.Name = "A2A"

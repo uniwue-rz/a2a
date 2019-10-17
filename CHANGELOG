@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [0.0.14] 2019-10-17
+
+- Fixed an error that the host prometheus configs rewrite group ones for all hosts
+
 ## [0.0.13] 2019-10-16
 
 - Fixed the version in the command line arguments
